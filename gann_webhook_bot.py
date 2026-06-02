@@ -17,22 +17,39 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "") # Deine Chat ID
 WEBHOOK_SECRET   = os.environ.get("WEBHOOK_SECRET", "")   # Eigenes Passwort als Schutz
 
 # ─── TELEGRAM NACHRICHT SENDEN ────────────────────────────────────────────────
+def round_val(val):
+    """Rundet einen Wert auf 3 Dezimalstellen"""
+    try:
+        return str(round(float(val), 3))
+    except:
+        return str(val)
+
 def send_telegram(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("FEHLER: TELEGRAM_TOKEN oder TELEGRAM_CHAT_ID nicht gesetzt")
         return False
-    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {
-        "chat_id":    TELEGRAM_CHAT_ID,
-        "text":       message,
-        "parse_mode": "HTML"
-    }
-    try:
-        r = requests.post(url, json=data, timeout=10)
-        return r.status_code == 200
-    except Exception as e:
-        print(f"Telegram Fehler: {e}")
-        return False
+
+    # Mehrere Chat IDs per Komma trennen: "123456,789012"
+    chat_ids = [c.strip() for c in TELEGRAM_CHAT_ID.split(",")]
+    success = True
+
+    for chat_id in chat_ids:
+        url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {
+            "chat_id":    chat_id,
+            "text":       message,
+            "parse_mode": "HTML"
+        }
+        try:
+            r = requests.post(url, json=data, timeout=10)
+            if r.status_code != 200:
+                print(f"Telegram Fehler fuer {chat_id}: {r.text}")
+                success = False
+        except Exception as e:
+            print(f"Telegram Fehler: {e}")
+            success = False
+
+    return success
 
 # ─── NACHRICHT FORMATIEREN ────────────────────────────────────────────────────
 def format_signal(data: dict) -> str:
@@ -40,13 +57,13 @@ def format_signal(data: dict) -> str:
     asset      = data.get("asset", "-")
     direction  = data.get("direction", "-").upper()
     ema_status = data.get("ema", "-").upper()
-    entry      = data.get("entry", "-")
-    sl         = data.get("sl", "-")
-    be         = data.get("be", "-")
-    tp1        = data.get("tp1", "-")
-    tp2        = data.get("tp2", "-")
-    tp3        = data.get("tp3", "-")
-    risk       = data.get("risk", "-")
+    entry      = round_val(data.get("entry", "-"))
+    sl         = round_val(data.get("sl", "-"))
+    be         = round_val(data.get("be", "-"))
+    tp1        = round_val(data.get("tp1", "-"))
+    tp2        = round_val(data.get("tp2", "-"))
+    tp3        = round_val(data.get("tp3", "-"))
+    risk       = round_val(data.get("risk", "-"))
     timeframe  = data.get("timeframe", "4H")
     now        = datetime.now().strftime("%d.%m.%Y %H:%M")
 
@@ -63,7 +80,7 @@ def format_signal(data: dict) -> str:
         risk_pct = "2%" if ema_status == "MT" else "1%"
 
         return (
-            f"<b>SIGNAL ALERT!!!</b>\n"
+            f"<b>GANN BOX SIGNAL</b>\n"
             f"<b>{dir_arrow} {asset}</b>  |  {timeframe}\n"
             f"<b>{ema_label} — Risiko {risk_pct}</b>\n"
             f"---\n"
