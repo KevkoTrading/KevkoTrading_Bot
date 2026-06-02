@@ -1,21 +1,21 @@
 # Gann Box — TradingView Webhook → Telegram Bot
 # Deploy auf Railway.app oder Render.com (kostenlos)
 # Benötigt: Python 3.9+, flask, requests
- 
+
 import os
 import json
 import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
- 
+
 app = Flask(__name__)
- 
+
 # ─── KONFIGURATION ────────────────────────────────────────────────────────────
 # Diese Werte als Environment Variables setzen (nicht hier hardcoden!)
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")   # Bot Token von BotFather
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "") # Deine Chat ID
 WEBHOOK_SECRET   = os.environ.get("WEBHOOK_SECRET", "")   # Eigenes Passwort als Schutz
- 
+
 # ─── TELEGRAM NACHRICHT SENDEN ────────────────────────────────────────────────
 def send_telegram(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -33,7 +33,7 @@ def send_telegram(message: str):
     except Exception as e:
         print(f"Telegram Fehler: {e}")
         return False
- 
+
 # ─── NACHRICHT FORMATIEREN ────────────────────────────────────────────────────
 def format_signal(data: dict) -> str:
     alert_type = data.get("type", "SIGNAL").upper()
@@ -49,15 +49,23 @@ def format_signal(data: dict) -> str:
     risk       = data.get("risk", "-")
     timeframe  = data.get("timeframe", "4H")
     now        = datetime.now().strftime("%d.%m.%Y %H:%M")
- 
+
     dir_arrow  = "LONG" if direction == "LONG" else "SHORT"
     ema_label  = "Mit Trend" if ema_status == "MT" else "Gegen Trend"
- 
+
     if alert_type == "SIGNAL":
+        # Signal Ablauf berechnen — 4 Kerzen ab jetzt
+        tf_hours = {"1": 1, "3": 3, "4H": 4, "4": 4, "D": 24, "1D": 24, "W": 168}
+        hours = tf_hours.get(timeframe, 4)
+        from datetime import timedelta
+        expiry_dt = datetime.now() + timedelta(hours=hours * 4)
+        expiry = expiry_dt.strftime("%d.%m.%Y %H:%M")
+        risk_pct = "2%" if ema_status == "MT" else "1%"
+
         return (
             f"<b>GANN BOX SIGNAL</b>\n"
             f"<b>{dir_arrow} {asset}</b>  |  {timeframe}\n"
-            f"<b>{ema_label}</b>\n"
+            f"<b>{ema_label} — Risiko {risk_pct}</b>\n"
             f"---\n"
             f"Entry : <code>{entry}</code>\n"
             f"SL    : <code>{sl}</code>\n"
@@ -67,9 +75,12 @@ def format_signal(data: dict) -> str:
             f"TP3   : <code>{tp3}</code>\n"
             f"Risk  : <code>{risk}</code>\n"
             f"---\n"
+            f"Signal gueltig bis: <b>{expiry}</b>\n"
+            f"Danach Order loeschen!\n"
+            f"---\n"
             f"{now}"
         )
- 
+
     elif alert_type == "BE":
         return (
             f"<b>BE TRIGGER - {asset}</b>\n"
@@ -79,7 +90,7 @@ def format_signal(data: dict) -> str:
             f"Trade ist RISIKOLOS\n"
             f"{now}"
         )
- 
+
     elif alert_type == "TP1":
         return (
             f"<b>TP1 ERREICHT - {asset}</b>\n"
@@ -88,7 +99,7 @@ def format_signal(data: dict) -> str:
             f"SL bleibt auf Entry: <code>{entry}</code>\n"
             f"{now}"
         )
- 
+
     elif alert_type == "TP2":
         return (
             f"<b>TP2 ERREICHT - {asset}</b>\n"
@@ -97,7 +108,7 @@ def format_signal(data: dict) -> str:
             f"Rest laeuft auf TP3: <code>{tp3}</code>\n"
             f"{now}"
         )
- 
+
     elif alert_type == "SL":
         return (
             f"<b>STOP LOSS - {asset}</b>\n"
@@ -106,10 +117,10 @@ def format_signal(data: dict) -> str:
             f"Ergebnis: -1R\n"
             f"{now}"
         )
- 
+
     else:
         return f"<b>{asset}</b>\n{json.dumps(data, indent=2)}\n{now}"
- 
+
 # ─── WEBHOOK ENDPOINT ─────────────────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -118,7 +129,7 @@ def webhook():
         secret = request.args.get("secret", "")
         if secret != WEBHOOK_SECRET:
             return jsonify({"error": "Unauthorized"}), 401
- 
+
     # JSON parsen
     try:
         data = request.get_json(force=True)
@@ -126,18 +137,18 @@ def webhook():
             data = json.loads(request.data.decode("utf-8"))
     except Exception as e:
         return jsonify({"error": f"JSON parse error: {e}"}), 400
- 
+
     print(f"Webhook empfangen: {json.dumps(data)}")
- 
+
     # Nachricht formatieren und senden
     message = format_signal(data)
     success = send_telegram(message)
- 
+
     return jsonify({
         "status":  "ok" if success else "telegram_error",
         "message": message
     }), 200 if success else 500
- 
+
 # ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET"])
 def health():
@@ -146,10 +157,9 @@ def health():
         "bot_ready": bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
         "time":      datetime.now().isoformat()
     })
- 
+
 # ─── START ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"Server startet auf Port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
- 
