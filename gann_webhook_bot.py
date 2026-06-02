@@ -80,7 +80,7 @@ def format_signal(data: dict) -> str:
         risk_pct = "2%" if ema_status == "MT" else "1%"
 
         return (
-            f"<b>GANN BOX SIGNAL</b>\n"
+            f"<b>SIGNAL ALERT!!!</b>\n"
             f"<b>{dir_arrow} {asset}</b>  |  {timeframe}\n"
             f"<b>{ema_label} — Risiko {risk_pct}</b>\n"
             f"---\n"
