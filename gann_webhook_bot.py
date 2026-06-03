@@ -90,7 +90,7 @@ def rv(val, prec=5):
     except:
         return str(val)
 
-def format_signal(data: dict) -> tuple[str, datetime | None]:
+def format_signal(data: dict):
     """Gibt (text, expiry_datetime) zurück"""
     t         = data.get("type", "SIGNAL").upper()
     asset     = data.get("asset", "-")
@@ -259,7 +259,13 @@ def webhook():
             return jsonify({"error": "Unauthorized"}), 401
 
     try:
-        data = request.get_json(force=True) or json.loads(request.data.decode("utf-8"))
+        raw = request.data.decode("utf-8")
+        print(f"Raw body: {raw[:300]}")
+        data = request.get_json(force=True)
+        if not data:
+            data = json.loads(raw)
+        if not data:
+            return jsonify({"error": "Empty body"}), 400
     except Exception as e:
         return jsonify({"error": f"JSON parse error: {e}"}), 400
 
