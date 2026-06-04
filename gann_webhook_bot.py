@@ -218,6 +218,25 @@ def format_signal(data: dict):
         )
         return text, None
 
+    elif t == "NEWS":
+        event   = data.get("event", "-")
+        impact  = data.get("impact", "HIGH")
+        time_   = data.get("time", "-")
+        note    = data.get("note", "")
+        text = (
+            f"<b>📰 FOREX NEWS WARNUNG — {asset}</b>\n"
+            f"───────────────\n"
+            f"Event  : <b>{event}</b>\n"
+            f"Impact : <b>{impact}</b>\n"
+            f"Zeit   : <code>{time_}</code>\n"
+            f"───────────────\n"
+            f"⚠️ Kein neuer Trade auf betroffene Paare!\n"
+            + (f"{note}\n" if note else "")
+            + f"───────────────\n"
+            f"🕐 {now}"
+        )
+        return text, None
+
     else:
         return f"<b>{asset}</b>\n{json.dumps(data, indent=2)}\n{now}", None
 
