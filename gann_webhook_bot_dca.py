@@ -321,6 +321,9 @@ def webhook():
                 state[key]["struck"] = True
                 save_state(state)
 
+    elif alert_type == "NEWS":
+        send_telegram(text)
+
     elif alert_type == "SL":
         # Signal durchstreichen
         send_telegram(text)
