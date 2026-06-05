@@ -111,9 +111,45 @@ def format_signal(data: dict):
     ema_lbl   = "With Trend" if ema == "MT" else "Against Trend"
     risk_pct  = "1%" if ema == "MT" else "0.5%"
 
+    # Assets die kein Wochenende kennen (Krypto)
+    CRYPTO_ASSETS = {"BTCUSD","BTCUSDT","ETHUSD","ETHUSDT","BNBUSD","BNBUSDT",
+                     "SOLUSD","SOLUSDT","XRPUSD","XRPUSDT","ADAUSD","ADAUSDT",
+                     "AVAXUSD","AVAXUSDT","LTCUSD","LTCUSDT"}
+
+    def calc_expiry(asset_ticker, tf_str):
+        """Berechnet Expiry: 4 Kerzen nach Signal, Wochenende überspringen für Non-Krypto."""
+        hours_per_candle = {"1":1,"3":3,"4H":4,"4":4,"D":24,"1D":24,"W":168}.get(tf_str, 4)
+        candles = 4
+        is_crypto = asset_ticker.upper() in CRYPTO_ASSETS
+
+        if is_crypto:
+            return datetime.now() + timedelta(hours=hours_per_candle * candles)
+
+        # Forex/Metals/Energy: nächsten Kerzenschluss finden, dann 4 Kerzen zählen
+        # 4H Kerzen schließen um 02/06/10/14/18/22 Uhr
+        dt = datetime.now()
+
+        # Finde nächsten 4H Kerzenschluss
+        closes = [2, 6, 10, 14, 18, 22]
+        for close_hour in closes:
+            if dt.hour < close_hour:
+                dt = dt.replace(hour=close_hour, minute=0, second=0, microsecond=0)
+                break
+        else:
+            # Nach 22 Uhr → nächster Tag 02 Uhr
+            dt = (dt + timedelta(days=1)).replace(hour=2, minute=0, second=0, microsecond=0)
+
+        # 4 Kerzen zählen, Wochenende überspringen
+        counted = 0
+        while counted < candles:
+            dt += timedelta(hours=hours_per_candle)
+            if dt.weekday() < 5:  # Montag=0 bis Freitag=4
+                counted += 1
+
+        return dt
+
     if t == "SIGNAL":
-        hours  = {"1":1,"3":3,"4H":4,"4":4,"D":24,"1D":24,"W":168}.get(tf, 4)
-        expiry = datetime.now() + timedelta(hours=hours * 4)
+        expiry  = calc_expiry(asset, tf)
         exp_str = expiry.strftime("%d.%m.%Y %H:%M")
 
         # DCA oder nur entry50?
@@ -320,9 +356,6 @@ def webhook():
                 strike_messages(state[key]["msg_ids"], state[key]["original_text"], "✅ TRADE GESCHLOSSEN — TP3")
                 state[key]["struck"] = True
                 save_state(state)
-
-    elif alert_type == "NEWS":
-        send_telegram(text)
 
     elif alert_type == "SL":
         # Signal durchstreichen
