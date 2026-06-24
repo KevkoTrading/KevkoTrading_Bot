@@ -1,5 +1,4 @@
 # Gann Box — TradingView Webhook → Telegram Bot v2 (DCA Edition)
-# Neu: DCA Entries, BE/TP/DCA Hit Nachrichten, Durchstreichen bei Expiry/SL
 
 import os, json, threading, requests
 from flask import Flask, request, jsonify
@@ -11,7 +10,6 @@ TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 WEBHOOK_SECRET   = os.environ.get("WEBHOOK_SECRET", "")
 
-# ─── STATE: offene Signale mit Message IDs ─────────────────────────────────────
 STATE_FILE = "/tmp/gann_signals.json"
 
 def load_state():
@@ -28,7 +26,6 @@ def save_state(state):
 def signal_key(asset, direction):
     return f"{asset}_{direction}"
 
-# ─── TELEGRAM HELPERS ─────────────────────────────────────────────────────────
 def get_chat_ids():
     return [c.strip() for c in TELEGRAM_CHAT_ID.split(",") if c.strip()]
 
@@ -74,7 +71,6 @@ def strike_messages(msg_ids: list, original_text: str, suffix: str = ""):
     for entry in msg_ids:
         edit_telegram(entry["chat_id"], entry["msg_id"], struck)
 
-# ─── FORMATTER ────────────────────────────────────────────────────────────────
 def rv(val, prec=5):
     try:
         v = float(val)
@@ -99,7 +95,6 @@ def format_signal(data: dict):
     risk      = rv(data.get("risk", "-"))
     tf        = data.get("timeframe", "4H")
     now       = datetime.now().strftime("%d.%m.%Y %H:%M")
-
     arrow     = "▲ LONG" if direction == "LONG" else "▼ SHORT"
     ema_lbl   = "With Trend" if ema == "MT" else "Against Trend"
     risk_pct  = "1%" if ema == "MT" else "0.5%"
@@ -110,12 +105,9 @@ def format_signal(data: dict):
 
     def calc_expiry(asset_ticker, tf_str):
         hours_per_candle = {"1":1,"3":3,"4H":4,"4":4,"D":24,"1D":24,"W":168}.get(tf_str, 4)
-        candles = 4
         is_crypto = asset_ticker.upper() in CRYPTO_ASSETS
-
         if is_crypto:
-            return datetime.now() + timedelta(hours=hours_per_candle * candles)
-
+            return datetime.now() + timedelta(hours=hours_per_candle * 4)
         dt = datetime.now()
         closes = [2, 6, 10, 14, 18, 22]
         for close_hour in closes:
@@ -124,28 +116,24 @@ def format_signal(data: dict):
                 break
         else:
             dt = (dt + timedelta(days=1)).replace(hour=2, minute=0, second=0, microsecond=0)
-
         counted = 0
-        while counted < candles:
+        while counted < 4:
             dt += timedelta(hours=hours_per_candle)
             if dt.weekday() < 5:
                 counted += 1
-
         return dt
 
     if t == "SIGNAL":
         expiry  = calc_expiry(asset, tf)
         exp_str = expiry.strftime("%d.%m.%Y %H:%M")
-
         has_dca = data.get("entry25") and data.get("entry25") != data.get("entry50")
         if has_dca:
             entry_block = (
-                f"E 0.50 : <code>{entry50}</code>  ← ½ Size\n"
-                f"E 0.25 : <code>{entry25}</code>  ← ½ Size"
+                f"E 0.50 : <code>{entry50}</code>  <- 1/2 Size\n"
+                f"E 0.25 : <code>{entry25}</code>  <- 1/2 Size"
             )
         else:
             entry_block = f"Entry  : <code>{entry50}</code>"
-
         text = (
             f"<b>🐴 GANN BOX SIGNAL</b>\n"
             f"<b>{arrow} {asset}</b>  |  {tf}\n"
@@ -157,10 +145,10 @@ def format_signal(data: dict):
             f"TP1    : <code>{tp1}</code>\n"
             f"TP2    : <code>{tp2}</code>\n"
             f"TP3    : <code>{tp3}</code>\n"
-            f"Risk Δ : <code>{risk}</code>\n"
+            f"Risk D : <code>{risk}</code>\n"
             f"───────────────\n"
             f"Valid until: <b>{exp_str}</b>\n"
-            f"Size auf 0.50 kalkulieren ÷ 2\n"
+            f"Size auf 0.50 kalkulieren / 2\n"
             f"───────────────\n"
             f"🕐 {now}"
         )
@@ -171,7 +159,6 @@ def format_signal(data: dict):
             f"<b>❌ STOP LOSS — {asset}</b>\n"
             f"───────────────\n"
             f"SL: <code>{sl}</code> getriggert\n"
-            f"Verlust < 1R (DCA Vorteil ✓)\n"
             f"───────────────\n"
             f"🕐 {now}"
         )
@@ -183,24 +170,21 @@ def format_signal(data: dict):
         time_  = data.get("time", "-")
         note   = data.get("note", "")
         text = (
-            f"<b>📰 FOREX NEWS WARNUNG — {asset}</b>\n"
+            f"<b>📰 FOREX NEWS — {asset}</b>\n"
             f"───────────────\n"
             f"Event  : <b>{event}</b>\n"
             f"Impact : <b>{impact}</b>\n"
             f"Zeit   : <code>{time_}</code>\n"
             f"───────────────\n"
-            f"⚠️ Kein neuer Trade auf betroffene Paare!\n"
+            f"⚠️ Kein neuer Trade!\n"
             + (f"{note}\n" if note else "")
-            + f"───────────────\n"
-            f"🕐 {now}"
+            + f"🕐 {now}"
         )
         return text, None
 
     else:
-        # BE, DCA, TP1, TP2, TP3 — kein Telegram, nur intern verarbeiten
         return None, None
 
-# ─── EXPIRY CHECKER ───────────────────────────────────────────────────────────
 def expiry_checker():
     import time
     while True:
@@ -215,11 +199,7 @@ def expiry_checker():
                 if not exp:
                     continue
                 if datetime.now() > datetime.fromisoformat(exp):
-                    strike_messages(
-                        sig["msg_ids"],
-                        sig["original_text"],
-                        "⏰ EXPIRED — Order löschen!"
-                    )
+                    strike_messages(sig["msg_ids"], sig["original_text"], "⏰ EXPIRED — Order loeschen!")
                     sig["struck"] = True
                     changed = True
             if changed:
@@ -229,13 +209,11 @@ def expiry_checker():
 
 threading.Thread(target=expiry_checker, daemon=True).start()
 
-# ─── WEBHOOK ──────────────────────────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if WEBHOOK_SECRET:
         if request.args.get("secret", "") != WEBHOOK_SECRET:
             return jsonify({"error": "Unauthorized"}), 401
-
     try:
         raw = request.data.decode("utf-8")
         print(f"Raw body: {raw[:300]}")
@@ -248,12 +226,10 @@ def webhook():
         return jsonify({"error": f"JSON parse error: {e}"}), 400
 
     print(f"Webhook: {json.dumps(data)}")
-
     alert_type = data.get("type", "SIGNAL").upper()
     asset      = data.get("asset", "-")
     direction  = data.get("direction", "-").upper()
     key        = signal_key(asset, direction)
-
     text, expiry = format_signal(data)
     state = load_state()
 
@@ -269,7 +245,6 @@ def webhook():
         save_state(state)
 
     elif alert_type == "TP3":
-        # Strike-Through ohne Telegram-Nachricht
         if key in state and not state[key].get("struck"):
             strike_messages(state[key]["msg_ids"], state[key]["original_text"], "✅ TRADE GESCHLOSSEN — TP3")
             state[key]["struck"] = True
@@ -286,12 +261,10 @@ def webhook():
         send_telegram(text)
 
     else:
-        # BE, DCA, TP1, TP2 — ignoriert, kein Telegram
         print(f"Ignoriert: {alert_type} — kein Telegram")
 
     return jsonify({"status": "ok", "type": alert_type}), 200
 
-# ─── HEALTH ───────────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET"])
 def health():
     state = load_state()
@@ -305,5 +278,4 @@ def health():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"Server startet auf Port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
