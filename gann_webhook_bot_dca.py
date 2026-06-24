@@ -1,3 +1,4 @@
+cd /root/bot && cat > gann_webhook_bot_dca.py << 'EOF'
 # Gann Box — TradingView Webhook → Telegram Bot v2 (DCA Edition)
 
 import os, json, threading, requests
@@ -129,8 +130,8 @@ def format_signal(data: dict):
         has_dca = data.get("entry25") and data.get("entry25") != data.get("entry50")
         if has_dca:
             entry_block = (
-                f"E 0.50 : <code>{entry50}</code>  <- 1/2 Size\n"
-                f"E 0.25 : <code>{entry25}</code>  <- 1/2 Size"
+                f"E 0.50 : <code>{entry50}</code>  ← ½ Size\n"
+                f"E 0.25 : <code>{entry25}</code>  ← ½ Size"
             )
         else:
             entry_block = f"Entry  : <code>{entry50}</code>"
@@ -279,3 +280,5 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+EOF
+systemctl restart gann-bot && sleep 3 && systemctl status gann-bot | head -5```
